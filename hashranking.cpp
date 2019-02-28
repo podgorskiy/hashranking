@@ -228,7 +228,7 @@ ndarray_uint32 argsort(ndarray_uint8 distance)
 	ndarray_uint32 result = ndarray_uint32(std::vector<ssize_t>{l1, l2});
 	
 	auto r = result.mutable_unchecked<2>();
-	auto d = distance.mutable_unchecked<2>();
+	auto d = distance.unchecked<2>();
 	
 	for (ssize_t x = 0; x < l1; ++x)
 	{
@@ -241,11 +241,109 @@ ndarray_uint32 argsort(ndarray_uint8 distance)
 	return result;
 }
 
+std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
+{
+	double map = 0.0;
+
+	py::buffer_info r_info = rank.request();
+	
+	ssize_t Q = r_info.shape[0];
+	ssize_t N = r_info.shape[1];
+
+	if (top_n == 0)
+	{
+		top_n = (int)N;
+	}
+	
+	const uint32_t* labels_db_ptr = labels_db.unchecked<1>().data(0);
+	const uint32_t* labels_query_ptr = labels_query.unchecked<1>().data(0);
+	auto r = rank.unchecked<2>();
+		
+	float* __restrict av_precision = (float*)(malloc(sizeof(float) * top_n));
+	float* __restrict av_recall = (float*)(malloc(sizeof(float) * top_n));
+	int* __restrict relevance = (int*)(malloc(sizeof(int) * top_n));
+	int* __restrict cumulative = (int*)(malloc(sizeof(int) * top_n));
+	float* __restrict precision = (float*)(malloc(sizeof(float) * top_n));
+	float* __restrict recall = (float*)(malloc(sizeof(float) * top_n));
+	
+	memset(av_precision, 0, sizeof(float) * top_n);
+	memset(av_recall, 0, sizeof(float) * top_n);
+	
+	for (int q = 0; q < Q; ++q)
+	{
+		const uint32_t* rank_ptr = r.data(q, 0);
+		for (int i =0; i < top_n; ++i)
+		{
+			int index = rank_ptr[i];
+			relevance[i] = labels_query_ptr[q] == labels_db_ptr[index];
+		}
+		
+		cumulative[0] = relevance[0];
+		for (int i = 1; i < top_n; ++i)
+		{
+			cumulative[i] = relevance[i] + cumulative[i - 1];
+		}
+		
+		int number_of_relative_docs = cumulative[top_n - 1];
+
+		int total_number_of_relevant_documents = 0;
+
+		for (int i =0; i < N; ++i)
+		{
+			int index = rank_ptr[i];
+			total_number_of_relevant_documents += labels_query_ptr[q] == labels_db_ptr[index];
+		}
+		
+		if (number_of_relative_docs != 0)
+		{
+			for (int i = 0; i < top_n; ++i)
+			{
+				precision[i] = cumulative[i] / float(i+1);
+				recall[i] = cumulative[i] / float(total_number_of_relevant_documents);
+			}
+			
+			for (int i = 0; i < top_n; ++i)
+			{
+				av_precision[i] += precision[i];
+				av_recall[i] += recall[i];
+			}
+			
+			double ap = 0.0;
+			for (int i = 0; i < top_n; ++i)
+			{
+				ap += precision[i] * relevance[i];
+			}
+			ap /= number_of_relative_docs;
+			map += ap;
+		}
+	}
+	
+	map /= Q;
+	
+	for (int i = 0; i < top_n; ++i)
+	{
+		av_precision[i] /= Q;
+		av_recall[i] /= Q;
+	}
+
+	free(relevance);
+	free(precision);
+	free(recall);
+	free(cumulative);
+	
+	return std::tuple<double, ndarray_float, ndarray_float>(map, 
+		ndarray_float(top_n, av_precision),
+		ndarray_float(top_n, av_recall)
+		);
+}
+
+
 PYBIND11_MODULE(_hashranking, m) {
 	m.doc() = "";
 
 	m.def("calc_hamming_dist", &calc_hamming_dist, "Compute hamming distance of all hash pairs from two arrays of hashes");
 	m.def("argsort", &argsort, "Argsort of distance matrix along second dimention");
+	m.def("calc_map", &calc_map, "Calc mAP given rank and labels");
 
 	//m.def("add_circle_filled", &AddCircleFilled, py::arg("centre"), py::arg("radius"), py::arg("col"), py::arg("num_segments") = 12);
 }
