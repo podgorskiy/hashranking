@@ -192,13 +192,13 @@ ndarray_uint8 calc_hamming_dist(ndarray_float b1, ndarray_float b2)
 	}
 }
 
-void argsort_1d(uint32_t* __restrict out_ptr, const uint8_t* __restrict s_ptr, ssize_t size)
+void argsort_1d(uint32_t* __restrict out_ptr, const uint8_t* __restrict d_ptr, ssize_t size)
 {
 	int32_t count[65];
 	memset(count, 0, sizeof(int32_t) * 65);
 	
 	for (ssize_t y = 0; y < size; ++y)
-		count[s_ptr[y]]++;	 
+		count[d_ptr[y]]++;	 
 	
 	for (int i = 1; i < 65; ++i)
 	{
@@ -207,35 +207,35 @@ void argsort_1d(uint32_t* __restrict out_ptr, const uint8_t* __restrict s_ptr, s
 	
 	for (ssize_t y = size -1; y >= 0; --y)
 	{
-		int8_t key = s_ptr[y];	 
+		int8_t key = d_ptr[y];	 
 		out_ptr[count[key] - 1] = (uint32_t)y;	 
 		count[key] -= 1;   
 	} 
 }
 
-ndarray_uint32 argsort(ndarray_uint8 similarity)
+ndarray_uint32 argsort(ndarray_uint8 distance)
 {
-	py::buffer_info s_info = similarity.request();
+	py::buffer_info d_info = distance.request();
 	
 	py::gil_scoped_release release;
 	
-	if (s_info.ndim != 2)
+	if (d_info.ndim != 2)
 		throw std::runtime_error("Number of dimensions must be two");
 
-	ssize_t l1 = s_info.shape[0];
-	ssize_t l2 = s_info.shape[1];
+	ssize_t l1 = d_info.shape[0];
+	ssize_t l2 = d_info.shape[1];
 	
 	ndarray_uint32 result = ndarray_uint32(std::vector<ssize_t>{l1, l2});
 	
 	auto r = result.mutable_unchecked<2>();
-	auto s = similarity.mutable_unchecked<2>();
+	auto d = distance.mutable_unchecked<2>();
 	
 	for (ssize_t x = 0; x < l1; ++x)
 	{
 		uint32_t* __restrict out_ptr = r.mutable_data(x, 0);
-		const uint8_t* __restrict s_ptr = s.data(x, 0);
+		const uint8_t* __restrict d_ptr = d.data(x, 0);
 		
-		argsort_1d(out_ptr, s_ptr, l2);
+		argsort_1d(out_ptr, d_ptr, l2);
 	}
 	
 	return result;
@@ -245,7 +245,7 @@ PYBIND11_MODULE(_hashranking, m) {
 	m.doc() = "";
 
 	m.def("calc_hamming_dist", &calc_hamming_dist, "Compute hamming distance of all hash pairs from two arrays of hashes");
-	m.def("argsort", &argsort, "Argsort of similarity matrix along second dimention");
+	m.def("argsort", &argsort, "Argsort of distance matrix along second dimention");
 
 	//m.def("add_circle_filled", &AddCircleFilled, py::arg("centre"), py::arg("radius"), py::arg("col"), py::arg("num_segments") = 12);
 }
