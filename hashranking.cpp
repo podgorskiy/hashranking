@@ -145,6 +145,8 @@ ndarray_uint8 _calc_hamming_dist(ndarray_float b1, ndarray_float b2)
 {
 	py::buffer_info buf1 = b1.request(), buf2 = b2.request();
 	
+	py::gil_scoped_release release;
+	
 	ndarray_uint8 result = ndarray_uint8(std::vector<ssize_t>{buf1.shape[0], buf2.shape[0]});
 	auto r = result.mutable_unchecked<2>();
 	
@@ -214,6 +216,8 @@ void argsort_1d(uint32_t* __restrict out_ptr, const uint8_t* __restrict s_ptr, s
 ndarray_uint32 argsort(ndarray_uint8 similarity)
 {
 	py::buffer_info s_info = similarity.request();
+	
+	py::gil_scoped_release release;
 	
 	if (s_info.ndim != 2)
 		throw std::runtime_error("Number of dimensions must be two");
