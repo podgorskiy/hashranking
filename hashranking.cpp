@@ -510,12 +510,9 @@ std::tuple<double, ndarray_float, ndarray_float> calc_map_from_hashes(ndarray_fl
 }
 
 PYBIND11_MODULE(_hashranking, m) {
-	m.doc() = "";
-
+	m.doc() = "C++ Python extension that implements fast procedures for forking with hashes";
 	m.def("calc_hamming_dist", &calc_hamming_dist, "Compute hamming distance of all hash pairs from two arrays of hashes");
 	m.def("argsort", &argsort, "Argsort of distance matrix along second dimention");
 	m.def("calc_map", &calc_map, "Calc mAP given rank and labels");
 	m.def("calc_map_from_hashes", &calc_map_from_hashes, "Calc mAP given float hashes and labels");
-
-	//m.def("add_circle_filled", &AddCircleFilled, py::arg("centre"), py::arg("radius"), py::arg("col"), py::arg("num_segments") = 12);
 }
