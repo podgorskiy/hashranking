@@ -75,6 +75,11 @@ def compute_map_fast(hashes_db, hashes_query, labels_db, labels_query, top_n=0):
     rank = calc_hamming_rank_fast(hashes_query, hashes_db)
     return _hashranking.calc_map(rank, labels_db, labels_query, top_n)
 
+@timer
+def compute_map_faster(hashes_db, hashes_query, labels_db, labels_query, top_n=0):
+    """Compute MAP for given set of hashes and labels"""
+    return _hashranking.calc_map_from_hashes(hashes_db, hashes_query,  labels_db, labels_query, top_n)
+
 
 def __compute_s(labels_db, labels_query, and_mode=False):
     """Return similarity matrix between two label vectors
@@ -135,8 +140,8 @@ if __name__ == '__main__':
 
     print("Passed!" if (d1 == d2).all() else "Failed!")
 
-    db_size = 5000
-    query_size = 1000
+    db_size = 10000
+    query_size = 2000
     class_count = 10
     hash_size = 64
 
@@ -148,11 +153,17 @@ if __name__ == '__main__':
     hashes_db = hashes_class[db] + 0.3 * np.random.randn(db_size, hash_size).astype(np.float32)
     hashes_query = hashes_class[query] + 0.3 * np.random.randn(query_size, hash_size).astype(np.float32)
 
-    mAP, p, r = compute_map(hashes_db, hashes_query, db, query)
+    mAP, p, r = compute_map(hashes_db, hashes_query, db, query, query_size // 2)
 
     print(mAP, p, r)
 
-    _mAP, p, r = compute_map_fast(hashes_db, hashes_query, db, query)
+    _mAP, p, r = compute_map_fast(hashes_db, hashes_query, db, query, query_size // 2)
+
+    print(mAP, p, r)
+
+    print("Passed!" if (_mAP == mAP) else "Failed!")
+
+    _mAP, p, r = compute_map_faster(hashes_db, hashes_query, db, query, query_size // 2)
 
     print(mAP, p, r)
 
