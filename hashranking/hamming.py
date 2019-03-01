@@ -144,6 +144,7 @@ if __name__ == '__main__':
     query_size = 2000
     class_count = 10
     hash_size = 64
+    topn = 5000
 
     db = np.random.randint(class_count, size=db_size, dtype=np.uint32)
     query = np.random.randint(class_count, size=query_size, dtype=np.uint32)
@@ -153,17 +154,17 @@ if __name__ == '__main__':
     hashes_db = hashes_class[db] + 0.3 * np.random.randn(db_size, hash_size).astype(np.float32)
     hashes_query = hashes_class[query] + 0.3 * np.random.randn(query_size, hash_size).astype(np.float32)
 
-    mAP, p, r = compute_map(hashes_db, hashes_query, db, query, query_size // 2)
+    mAP, p, r = compute_map(hashes_db, hashes_query, db, query, topn)
 
     print(mAP, p, r)
 
-    _mAP, p, r = compute_map_fast(hashes_db, hashes_query, db, query, query_size // 2)
+    _mAP, p, r = compute_map_fast(hashes_db, hashes_query, db, query, topn)
 
     print(mAP, p, r)
 
     print("Passed!" if (_mAP == mAP) else "Failed!")
 
-    _mAP, p, r = compute_map_faster(hashes_db, hashes_query, db, query, query_size // 2)
+    _mAP, p, r = compute_map_faster(hashes_db, hashes_query, db, query, topn)
 
     print(mAP, p, r)
 
