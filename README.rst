@@ -1,4 +1,4 @@
-hashranking - fast procedures for forking with hashes for deeplearning research
+hashranking - fast procedures for working with hashes for deeplearning research
 ===============================================================================
 
 In Deep Learning research, hashing, retrieval, and ranking tasks often require calculation of mAP of retrieval, which can be computationally expensive.
