@@ -243,10 +243,30 @@ ndarray_uint32 argsort(ndarray_uint8 distance)
 
 std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
 {
-	double map = 0.0;
-
 	py::buffer_info r_info = rank.request();
-	
+	py::buffer_info labels_db_info = labels_db.request();
+	py::buffer_info labels_query_info = labels_query.request();
+
+	py::gil_scoped_release release;
+
+	if (r_info.ndim != 2)
+		throw std::runtime_error("Number of dimensions for rank must be two");
+
+	if (labels_db_info.ndim != 1)
+		throw std::runtime_error("Number of dimensions from labels_db must be one");
+
+	if (labels_query_info.ndim != 1)
+		throw std::runtime_error("Number of dimensions from labels_db must be one");
+
+	if (r_info.shape[0] != labels_query_info.shape[0])
+		throw std::runtime_error("Size of dimension 0 of rank must match size of labels_query");
+
+	if (r_info.shape[1] != labels_db_info.shape[0])
+		throw std::runtime_error("Size of dimension 1 of rank must match size of labels_db");
+
+	if (top_n > labels_db_info.shape[0])
+		throw std::runtime_error("top_n must not be greater than size of labels_db");
+
 	ssize_t Q = r_info.shape[0];
 	ssize_t N = r_info.shape[1];
 
@@ -254,7 +274,7 @@ std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, n
 	{
 		top_n = (int)N;
 	}
-	
+
 	const uint32_t* labels_db_ptr = labels_db.unchecked<1>().data(0);
 	const uint32_t* labels_query_ptr = labels_query.unchecked<1>().data(0);
 	auto r = rank.unchecked<2>();
@@ -268,7 +288,9 @@ std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, n
 	
 	memset(av_precision, 0, sizeof(float) * top_n);
 	memset(av_recall, 0, sizeof(float) * top_n);
-	
+
+	double map = 0.0;
+
 	for (int q = 0; q < Q; ++q)
 	{
 		const uint32_t* rank_ptr = r.data(q, 0);
@@ -330,13 +352,162 @@ std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, n
 	free(precision);
 	free(recall);
 	free(cumulative);
-	
+
+	py::gil_scoped_acquire acquire;
 	return std::tuple<double, ndarray_float, ndarray_float>(map, 
 		ndarray_float(top_n, av_precision),
 		ndarray_float(top_n, av_recall)
 		);
 }
 
+template<typename T>
+std::tuple<double, ndarray_float, ndarray_float> _calc_map_from_hashes(ndarray_float hashes_db, ndarray_float hashes_query, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
+{
+	py::buffer_info hashes_db_info = hashes_db.request(), hashes_query_info = hashes_query.request();
+	py::buffer_info labels_db_info = labels_db.request(), labels_query_info = labels_query.request();
+
+	T* __restrict hashes_db_int = (T*)(malloc(sizeof(T) * hashes_db_info.shape[0]));
+	T* __restrict hashes_query_int = (T*)(malloc(sizeof(T) * hashes_query_info.shape[0]));
+	to_int_hashes<T>(hashes_db, hashes_db_int);
+	to_int_hashes<T>(hashes_query, hashes_query_int);
+
+	ssize_t Q = hashes_query_info.shape[0];
+	ssize_t N = hashes_db_info.shape[0];
+
+	if (top_n == 0)
+	{
+		top_n = (int)N;
+	}
+
+	const uint32_t* labels_db_ptr = labels_db.unchecked<1>().data(0);
+	const uint32_t* labels_query_ptr = labels_query.unchecked<1>().data(0);
+
+	float* __restrict av_precision = (float*)(malloc(sizeof(float) * top_n));
+	float* __restrict av_recall = (float*)(malloc(sizeof(float) * top_n));
+	int* __restrict relevance = (int*)(malloc(sizeof(int) * top_n));
+	int* __restrict cumulative = (int*)(malloc(sizeof(int) * top_n));
+	float* __restrict precision = (float*)(malloc(sizeof(float) * top_n));
+	float* __restrict recall = (float*)(malloc(sizeof(float) * top_n));
+	uint8_t* __restrict dist = (uint8_t*)(malloc(sizeof(uint8_t) * N));
+	uint32_t* __restrict rank = (uint32_t*)(malloc(sizeof(uint32_t) * N));
+
+	memset(av_precision, 0, sizeof(float) * top_n);
+	memset(av_recall, 0, sizeof(float) * top_n);
+
+	double map = 0.0;
+
+	for (int q = 0; q < Q; ++q)
+	{
+		T query = hashes_query_int[q];
+		_calc_hamming_dist<T>(hashes_db_int, hashes_db_info.shape[0], query, dist);
+
+		argsort_1d(rank, dist, hashes_db_info.shape[0]);
+
+		for (int i =0; i < top_n; ++i)
+		{
+			int index = rank[i];
+			relevance[i] = labels_query_ptr[q] == labels_db_ptr[index];
+		}
+
+		cumulative[0] = relevance[0];
+		for (int i = 1; i < top_n; ++i)
+		{
+			cumulative[i] = relevance[i] + cumulative[i - 1];
+		}
+
+		int number_of_relative_docs = cumulative[top_n - 1];
+
+		int total_number_of_relevant_documents = 0;
+
+		for (int i =0; i < N; ++i)
+		{
+			int index = rank[i];
+			total_number_of_relevant_documents += labels_query_ptr[q] == labels_db_ptr[index];
+		}
+
+		if (number_of_relative_docs != 0)
+		{
+			for (int i = 0; i < top_n; ++i)
+			{
+				precision[i] = cumulative[i] / float(i+1);
+				recall[i] = cumulative[i] / float(total_number_of_relevant_documents);
+			}
+
+			for (int i = 0; i < top_n; ++i)
+			{
+				av_precision[i] += precision[i];
+				av_recall[i] += recall[i];
+			}
+
+			double ap = 0.0;
+			for (int i = 0; i < top_n; ++i)
+			{
+				ap += precision[i] * relevance[i];
+			}
+			ap /= number_of_relative_docs;
+			map += ap;
+		}
+	}
+
+	map /= Q;
+
+	for (int i = 0; i < top_n; ++i)
+	{
+		av_precision[i] /= Q;
+		av_recall[i] /= Q;
+	}
+
+	free(relevance);
+	free(precision);
+	free(recall);
+	free(cumulative);
+	free(hashes_db_int);
+	free(hashes_query_int);
+
+	py::gil_scoped_acquire acquire;
+	return std::tuple<double, ndarray_float, ndarray_float>(map,
+		ndarray_float(top_n, av_precision),
+		ndarray_float(top_n, av_recall)
+		);
+}
+
+std::tuple<double, ndarray_float, ndarray_float> calc_map_from_hashes(ndarray_float hashes_db, ndarray_float hashes_query, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
+{
+	py::buffer_info hashes_db_info = hashes_db.request(), hashes_query_info = hashes_query.request();
+	py::buffer_info labels_db_info = labels_db.request(), labels_query_info = labels_query.request();
+
+	if (hashes_db_info.ndim != 2 || hashes_query_info.ndim != 2)
+		throw std::runtime_error("Number of dimensions for hashes must be two");
+
+	if (labels_db_info.ndim != 1 || labels_query_info.ndim != 1)
+		throw std::runtime_error("Number of dimensions for labels must be one");
+
+	if (hashes_db_info.shape[1] != hashes_query_info.shape[1])
+		throw std::runtime_error("Second dimension must match");
+
+	if (hashes_db_info.shape[0] != labels_db_info.shape[0])
+		throw std::runtime_error("Size of hashes_db and labels_db must match");
+
+	if (hashes_query_info.shape[0] != labels_query_info.shape[0])
+		throw std::runtime_error("Size of hashes_db and labels_db must match");
+
+	if (hashes_db_info.shape[1] > 64)
+		throw std::runtime_error("Supports only hashes up to 64b");
+
+	if (top_n > labels_db_info.shape[0])
+		throw std::runtime_error("top_n must not be greater than size of labels_db");
+
+	bool hash32 = hashes_db_info.shape[1] <= 32;
+
+	if (hash32)
+	{
+		return _calc_map_from_hashes<uint32_t>(hashes_db, hashes_query, labels_db, labels_query, top_n);
+	}
+	else
+	{
+		return _calc_map_from_hashes<uint64_t>(hashes_db, hashes_query, labels_db, labels_query, top_n);
+	}
+}
 
 PYBIND11_MODULE(_hashranking, m) {
 	m.doc() = "";
@@ -344,6 +515,7 @@ PYBIND11_MODULE(_hashranking, m) {
 	m.def("calc_hamming_dist", &calc_hamming_dist, "Compute hamming distance of all hash pairs from two arrays of hashes");
 	m.def("argsort", &argsort, "Argsort of distance matrix along second dimention");
 	m.def("calc_map", &calc_map, "Calc mAP given rank and labels");
+	m.def("calc_map_from_hashes", &calc_map_from_hashes, "Calc mAP given float hashes and labels");
 
 	//m.def("add_circle_filled", &AddCircleFilled, py::arg("centre"), py::arg("radius"), py::arg("col"), py::arg("num_segments") = 12);
 }
