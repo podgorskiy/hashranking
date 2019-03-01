@@ -241,6 +241,65 @@ ndarray_uint32 argsort(ndarray_uint8 distance)
 	return result;
 }
 
+inline double compute_average_precision(
+	const uint32_t* __restrict rank, 
+	const uint32_t* __restrict labels_db_ptr, 
+	const uint32_t labels_query,
+	float* __restrict precision,
+	float* __restrict recall,
+	float* __restrict av_precision,
+	float* __restrict av_recall,
+	int* __restrict relevance, 
+	int* __restrict cumulative, 
+	ssize_t N, int top_n)
+{
+	for (int i =0; i < top_n; ++i)
+	{
+		int index = rank[i];
+		relevance[i] = labels_query == labels_db_ptr[index];
+	}
+		
+	cumulative[0] = relevance[0];
+	for (int i = 1; i < top_n; ++i)
+	{
+		cumulative[i] = relevance[i] + cumulative[i - 1];
+	}
+    
+	int number_of_relative_docs = cumulative[top_n - 1];
+    
+	int total_number_of_relevant_documents = 0;
+    
+	for (int i =0; i < N; ++i)
+	{
+		int index = rank[i];
+		total_number_of_relevant_documents += labels_query == labels_db_ptr[index];
+	}
+    
+	if (number_of_relative_docs != 0)
+	{
+		for (int i = 0; i < top_n; ++i)
+		{
+			precision[i] = cumulative[i] / float(i+1);
+			recall[i] = cumulative[i] / float(total_number_of_relevant_documents);
+		}
+    
+		for (int i = 0; i < top_n; ++i)
+		{
+			av_precision[i] += precision[i];
+			av_recall[i] += recall[i];
+		}
+    
+		double ap = 0.0;
+		for (int i = 0; i < top_n; ++i)
+		{
+			ap += precision[i] * relevance[i];
+		}
+		ap /= number_of_relative_docs;
+		return ap;
+	}
+	return 0.0;
+}
+
 std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
 {
 	py::buffer_info r_info = rank.request();
@@ -279,12 +338,13 @@ std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, n
 	const uint32_t* labels_query_ptr = labels_query.unchecked<1>().data(0);
 	auto r = rank.unchecked<2>();
 		
+	int* relevance = (int*)(malloc(sizeof(int) * top_n));
+	int* cumulative = (int*)(malloc(sizeof(int) * top_n));
+	float* precision = (float*)(malloc(sizeof(float) * top_n));
+	float* recall = (float*)(malloc(sizeof(float) * top_n));
+	
 	float* __restrict av_precision = (float*)(malloc(sizeof(float) * top_n));
 	float* __restrict av_recall = (float*)(malloc(sizeof(float) * top_n));
-	int* __restrict relevance = (int*)(malloc(sizeof(int) * top_n));
-	int* __restrict cumulative = (int*)(malloc(sizeof(int) * top_n));
-	float* __restrict precision = (float*)(malloc(sizeof(float) * top_n));
-	float* __restrict recall = (float*)(malloc(sizeof(float) * top_n));
 	
 	memset(av_precision, 0, sizeof(float) * top_n);
 	memset(av_recall, 0, sizeof(float) * top_n);
@@ -294,50 +354,8 @@ std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, n
 	for (int q = 0; q < Q; ++q)
 	{
 		const uint32_t* rank_ptr = r.data(q, 0);
-		for (int i =0; i < top_n; ++i)
-		{
-			int index = rank_ptr[i];
-			relevance[i] = labels_query_ptr[q] == labels_db_ptr[index];
-		}
-		
-		cumulative[0] = relevance[0];
-		for (int i = 1; i < top_n; ++i)
-		{
-			cumulative[i] = relevance[i] + cumulative[i - 1];
-		}
-		
-		int number_of_relative_docs = cumulative[top_n - 1];
-
-		int total_number_of_relevant_documents = 0;
-
-		for (int i =0; i < N; ++i)
-		{
-			int index = rank_ptr[i];
-			total_number_of_relevant_documents += labels_query_ptr[q] == labels_db_ptr[index];
-		}
-		
-		if (number_of_relative_docs != 0)
-		{
-			for (int i = 0; i < top_n; ++i)
-			{
-				precision[i] = cumulative[i] / float(i+1);
-				recall[i] = cumulative[i] / float(total_number_of_relevant_documents);
-			}
-			
-			for (int i = 0; i < top_n; ++i)
-			{
-				av_precision[i] += precision[i];
-				av_recall[i] += recall[i];
-			}
-			
-			double ap = 0.0;
-			for (int i = 0; i < top_n; ++i)
-			{
-				ap += precision[i] * relevance[i];
-			}
-			ap /= number_of_relative_docs;
-			map += ap;
-		}
+		double ap = compute_average_precision(rank_ptr, labels_db_ptr, labels_query_ptr[q], precision, recall, av_precision, av_recall, relevance, cumulative, N, top_n);
+		map += ap;
 	}
 	
 	map /= Q;
@@ -382,12 +400,14 @@ std::tuple<double, ndarray_float, ndarray_float> _calc_map_from_hashes(ndarray_f
 	const uint32_t* labels_db_ptr = labels_db.unchecked<1>().data(0);
 	const uint32_t* labels_query_ptr = labels_query.unchecked<1>().data(0);
 
+	int* relevance = (int*)(malloc(sizeof(int) * top_n));
+	int* cumulative = (int*)(malloc(sizeof(int) * top_n));
+	float* precision = (float*)(malloc(sizeof(float) * top_n));
+	float* recall = (float*)(malloc(sizeof(float) * top_n));
+	
 	float* __restrict av_precision = (float*)(malloc(sizeof(float) * top_n));
 	float* __restrict av_recall = (float*)(malloc(sizeof(float) * top_n));
-	int* __restrict relevance = (int*)(malloc(sizeof(int) * top_n));
-	int* __restrict cumulative = (int*)(malloc(sizeof(int) * top_n));
-	float* __restrict precision = (float*)(malloc(sizeof(float) * top_n));
-	float* __restrict recall = (float*)(malloc(sizeof(float) * top_n));
+	
 	uint8_t* __restrict dist = (uint8_t*)(malloc(sizeof(uint8_t) * N));
 	uint32_t* __restrict rank = (uint32_t*)(malloc(sizeof(uint32_t) * N));
 
@@ -403,50 +423,8 @@ std::tuple<double, ndarray_float, ndarray_float> _calc_map_from_hashes(ndarray_f
 
 		argsort_1d(rank, dist, hashes_db_info.shape[0]);
 
-		for (int i =0; i < top_n; ++i)
-		{
-			int index = rank[i];
-			relevance[i] = labels_query_ptr[q] == labels_db_ptr[index];
-		}
-
-		cumulative[0] = relevance[0];
-		for (int i = 1; i < top_n; ++i)
-		{
-			cumulative[i] = relevance[i] + cumulative[i - 1];
-		}
-
-		int number_of_relative_docs = cumulative[top_n - 1];
-
-		int total_number_of_relevant_documents = 0;
-
-		for (int i =0; i < N; ++i)
-		{
-			int index = rank[i];
-			total_number_of_relevant_documents += labels_query_ptr[q] == labels_db_ptr[index];
-		}
-
-		if (number_of_relative_docs != 0)
-		{
-			for (int i = 0; i < top_n; ++i)
-			{
-				precision[i] = cumulative[i] / float(i+1);
-				recall[i] = cumulative[i] / float(total_number_of_relevant_documents);
-			}
-
-			for (int i = 0; i < top_n; ++i)
-			{
-				av_precision[i] += precision[i];
-				av_recall[i] += recall[i];
-			}
-
-			double ap = 0.0;
-			for (int i = 0; i < top_n; ++i)
-			{
-				ap += precision[i] * relevance[i];
-			}
-			ap /= number_of_relative_docs;
-			map += ap;
-		}
+		double ap = compute_average_precision(rank, labels_db_ptr, labels_query_ptr[q], precision, recall, av_precision, av_recall, relevance, cumulative, N, top_n);
+		map += ap;
 	}
 
 	map /= Q;
