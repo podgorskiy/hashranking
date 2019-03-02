@@ -124,7 +124,7 @@ inline void to_int_hashes(py::array_t<float, py::array::c_style> x, uint64_t* ou
 }
 
 template<typename T>
-void _calc_hamming_dist(T* __restrict b2, ssize_t b2_size, T b1, uint8_t* out)
+void _hamming_distance(T* __restrict b2, ssize_t b2_size, T b1, uint8_t* out)
 {
 	ssize_t j = 0;
 	for (; j + 3 < b2_size; j += 4)
@@ -141,7 +141,7 @@ void _calc_hamming_dist(T* __restrict b2, ssize_t b2_size, T b1, uint8_t* out)
 }
 
 template<typename T>
-ndarray_uint8 _calc_hamming_dist(ndarray_float b1, ndarray_float b2)
+ndarray_uint8 _hamming_distance(ndarray_float b1, ndarray_float b2)
 {
 	py::buffer_info buf1 = b1.request(), buf2 = b2.request();
 	
@@ -159,7 +159,7 @@ ndarray_uint8 _calc_hamming_dist(ndarray_float b1, ndarray_float b2)
 	{
 		uint8_t* __restrict ptr = r.mutable_data(i, 0);
 		T b1_i = b1_int[i];
-		_calc_hamming_dist<T>(b2_int, buf2.shape[0], b1_i, ptr);
+		_hamming_distance<T>(b2_int, buf2.shape[0], b1_i, ptr);
 	}
 	free(b1_int);
 	free(b2_int);
@@ -167,7 +167,7 @@ ndarray_uint8 _calc_hamming_dist(ndarray_float b1, ndarray_float b2)
 	return result;
 }
 
-ndarray_uint8 calc_hamming_dist(ndarray_float b1, ndarray_float b2)
+ndarray_uint8 hamming_distance(ndarray_float b1, ndarray_float b2)
 {
 	py::buffer_info buf1 = b1.request(), buf2 = b2.request();
 
@@ -184,11 +184,11 @@ ndarray_uint8 calc_hamming_dist(ndarray_float b1, ndarray_float b2)
 	
 	if (hash32)
 	{
-		return _calc_hamming_dist<uint32_t>(b1, b2);
+		return _hamming_distance<uint32_t>(b1, b2);
 	}
 	else
 	{
-		return _calc_hamming_dist<uint64_t>(b1, b2);
+		return _hamming_distance<uint64_t>(b1, b2);
 	}
 }
 
@@ -300,7 +300,7 @@ inline double compute_average_precision(
 	return 0.0;
 }
 
-std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
+std::tuple<double, ndarray_float, ndarray_float> compute_map_from_rank(ndarray_uint32 rank, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
 {
 	py::buffer_info r_info = rank.request();
 	py::buffer_info labels_db_info = labels_db.request();
@@ -379,7 +379,7 @@ std::tuple<double, ndarray_float, ndarray_float> calc_map(ndarray_uint32 rank, n
 }
 
 template<typename T>
-std::tuple<double, ndarray_float, ndarray_float> _calc_map_from_hashes(ndarray_float hashes_db, ndarray_float hashes_query, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
+std::tuple<double, ndarray_float, ndarray_float> _compute_map_from_hashes(ndarray_float hashes_db, ndarray_float hashes_query, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
 {
 	py::buffer_info hashes_db_info = hashes_db.request(), hashes_query_info = hashes_query.request();
 	py::buffer_info labels_db_info = labels_db.request(), labels_query_info = labels_query.request();
@@ -419,7 +419,7 @@ std::tuple<double, ndarray_float, ndarray_float> _calc_map_from_hashes(ndarray_f
 	for (int q = 0; q < Q; ++q)
 	{
 		T query = hashes_query_int[q];
-		_calc_hamming_dist<T>(hashes_db_int, hashes_db_info.shape[0], query, dist);
+		_hamming_distance<T>(hashes_db_int, hashes_db_info.shape[0], query, dist);
 
 		argsort_1d(rank, dist, hashes_db_info.shape[0]);
 
@@ -449,7 +449,7 @@ std::tuple<double, ndarray_float, ndarray_float> _calc_map_from_hashes(ndarray_f
 		);
 }
 
-std::tuple<double, ndarray_float, ndarray_float> calc_map_from_hashes(ndarray_float hashes_db, ndarray_float hashes_query, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
+std::tuple<double, ndarray_float, ndarray_float> compute_map_from_hashes(ndarray_float hashes_db, ndarray_float hashes_query, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
 {
 	py::buffer_info hashes_db_info = hashes_db.request(), hashes_query_info = hashes_query.request();
 	py::buffer_info labels_db_info = labels_db.request(), labels_query_info = labels_query.request();
@@ -479,18 +479,18 @@ std::tuple<double, ndarray_float, ndarray_float> calc_map_from_hashes(ndarray_fl
 
 	if (hash32)
 	{
-		return _calc_map_from_hashes<uint32_t>(hashes_db, hashes_query, labels_db, labels_query, top_n);
+		return _compute_map_from_hashes<uint32_t>(hashes_db, hashes_query, labels_db, labels_query, top_n);
 	}
 	else
 	{
-		return _calc_map_from_hashes<uint64_t>(hashes_db, hashes_query, labels_db, labels_query, top_n);
+		return _compute_map_from_hashes<uint64_t>(hashes_db, hashes_query, labels_db, labels_query, top_n);
 	}
 }
 
 PYBIND11_MODULE(_hashranking, m) {
 	m.doc() = "C++ Python extension that implements fast procedures for working with hashes";
-	m.def("calc_hamming_dist", &calc_hamming_dist, "Compute hamming distance of all hash pairs from two arrays of hashes");
+	m.def("hamming_distance", &hamming_distance, "Compute hamming distance of all hash pairs from two arrays of hashes");
 	m.def("argsort", &argsort, "Argsort of distance matrix along second dimention");
-	m.def("calc_map", &calc_map, "Calc mAP given rank and labels");
-	m.def("calc_map_from_hashes", &calc_map_from_hashes, "Calc mAP given float hashes and labels");
+	m.def("compute_map_from_rank", &compute_map_from_rank, "Compute mAP given rank and labels");
+	m.def("compute_map_from_hashes", &compute_map_from_hashes, "Compute mAP given float hashes and labels");
 }

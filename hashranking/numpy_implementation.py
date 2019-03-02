@@ -17,7 +17,7 @@
 import numpy as np
 
 
-def calc_hamming_dist(b1, b2):
+def hamming_distance(b1, b2):
     """Compute the hamming distance between every pair of data points represented in each row of b1 and b2"""
     p1 = np.sign(b1).astype(np.int8)
     p2 = np.sign(b2).astype(np.int8)
@@ -27,21 +27,21 @@ def calc_hamming_dist(b1, b2):
     return d
 
 
-def calc_hamming_rank(b1, b2):
+def hamming_rank(b1, b2):
     """Return rank of pairs. Takes vector of hashes b1 and b2 and returns correspondence rank of b1 to b2
     """
-    dist_h = calc_hamming_dist(b1, b2)
+    dist_h = hamming_distance(b1, b2)
     return np.argsort(dist_h, 1, kind='stable')
 
 
 def compute_map(hashes_db, hashes_query, labels_db, labels_query, top_n=0):
     """Compute MAP for given set of hashes and labels"""
-    rank = calc_hamming_rank(hashes_query, hashes_db)
-    s = __compute_s(labels_db, labels_query)
-    return calc_map(rank, s, top_n)
+    rank = hamming_rank(hashes_query, hashes_db)
+    s = _compute_similarity(labels_db, labels_query)
+    return compute_map_from_rank(rank, s, top_n)
 
 
-def __compute_s(labels_db, labels_query, and_mode=False):
+def _compute_similarity(labels_db, labels_query, and_mode=False):
     """Return similarity matrix between two label vectors
     The output is binary matrix of size n_train x n_test
     """
@@ -51,7 +51,7 @@ def __compute_s(labels_db, labels_query, and_mode=False):
         return np.equal(labels_db, labels_query[:, np.newaxis])
 
 
-def calc_map(rank, s, top_n):
+def compute_map_from_rank(rank, s, top_n):
     """compute mean average precision (MAP)"""
     Q, N = s.shape
     if top_n == 0:

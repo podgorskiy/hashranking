@@ -11,12 +11,12 @@ class HammingDistTests(unittest.TestCase):
     def test_numpy_implementation(self):
         rank = np.asarray([[0, 1, 2], [2, 1, 0], [1, 2, 0]])
         s = np.asarray([[1, 0, 0], [0, 0, 1], [0, 1, 0]])
-        mAP, p, r = hashranking.numpy_implementation.calc_map(rank, s, 0)
+        mAP, p, r = hashranking.numpy_implementation.compute_map_from_rank(rank, s, 0)
         self.assertTrue(mAP == 1)
 
         rank = np.asarray([[0, 1], [1, 0]])
         s = np.asarray([[1, 0], [1, 0]])
-        mAP, p, r = hashranking.numpy_implementation.calc_map(rank, s, 0)
+        mAP, p, r = hashranking.numpy_implementation.compute_map_from_rank(rank, s, 0)
         self.assertTrue(mAP == 0.75)
 
     def test_on_random_less_than_32(self):
@@ -39,7 +39,7 @@ class HammingDistTests(unittest.TestCase):
 
         self.assertTrue(mAP_py == mAP_cpp)
 
-        rank = hashranking.calc_hamming_rank(hashes_query, hashes_db)
+        rank = hashranking.hamming_rank(hashes_query, hashes_db)
         mAP_cpp2, p, r = hashranking.compute_map_from_rank(rank, db, query, top_n)
 
         self.assertTrue(mAP_py == mAP_cpp2)
@@ -64,7 +64,7 @@ class HammingDistTests(unittest.TestCase):
 
         self.assertTrue(mAP_py == mAP_cpp)
 
-        rank = hashranking.calc_hamming_rank(hashes_query, hashes_db)
+        rank = hashranking.hamming_rank(hashes_query, hashes_db)
         mAP_cpp2, p, r = hashranking.compute_map_from_rank(rank, db, query, top_n)
 
         self.assertTrue(mAP_py == mAP_cpp2)
