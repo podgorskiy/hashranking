@@ -14,5 +14,5 @@ class ArgSortTests(unittest.TestCase):
 
     def test_on_random(self):
         dist = np.random.randint(0, 64, size=(500, 1000), dtype=np.uint8)
-        self.assertTrue((hashranking.argsort(dist) == np.argsort(dist, 1, kind='stable')).all())
+        self.assertTrue((hashranking.argsort(dist) == np.argsort(dist, 1, kind='mergesort')).all())
 

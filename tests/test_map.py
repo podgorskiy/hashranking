@@ -1,4 +1,3 @@
-import os
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import hashranking
@@ -34,8 +33,8 @@ class HammingDistTests(unittest.TestCase):
         hashes_db = hashes_class[db] + 0.3 * np.random.randn(db_size, hash_size).astype(np.float32)
         hashes_query = hashes_class[query] + 0.3 * np.random.randn(query_size, hash_size).astype(np.float32)
 
-        mAP_py, p, r = hashranking.numpy_implementation.compute_map(hashes_db, hashes_query, db, query, top_n)
-        mAP_cpp, p, r = hashranking.compute_map(hashes_db, hashes_query, db, query, top_n)
+        mAP_py, p, r = hashranking.numpy_implementation.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
+        mAP_cpp, p, r = hashranking.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
 
         self.assertTrue(mAP_py == mAP_cpp)
 
@@ -59,8 +58,8 @@ class HammingDistTests(unittest.TestCase):
         hashes_db = hashes_class[db] + 0.3 * np.random.randn(db_size, hash_size).astype(np.float32)
         hashes_query = hashes_class[query] + 0.3 * np.random.randn(query_size, hash_size).astype(np.float32)
 
-        mAP_py, p, r = hashranking.numpy_implementation.compute_map(hashes_db, hashes_query, db, query, top_n)
-        mAP_cpp, p, r = hashranking.compute_map(hashes_db, hashes_query, db, query, top_n)
+        mAP_py, p, r = hashranking.numpy_implementation.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
+        mAP_cpp, p, r = hashranking.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
 
         self.assertTrue(mAP_py == mAP_cpp)
 
@@ -86,11 +85,11 @@ class HammingDistTests(unittest.TestCase):
 
         @timer.timer
         def numpy():
-            return hashranking.numpy_implementation.compute_map(hashes_db, hashes_query, db, query, top_n)
+            return hashranking.numpy_implementation.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
 
         @timer.timer
         def cpp_extension():
-            return hashranking.compute_map(hashes_db, hashes_query, db, query, top_n)
+            return hashranking.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
 
         mAP_py, p, r = numpy()
         mAP_cpp, p, r = cpp_extension()
