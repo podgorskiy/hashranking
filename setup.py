@@ -26,9 +26,9 @@ elif platform.system() == 'Windows':
     
 here = os.path.abspath(os.path.dirname(__file__))
 
-#with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
-#    long_description = f.read()
-long_description = ""
+with open(os.path.join(here, 'README.rst'), encoding='utf-8') as f:
+    long_description = f.read()
+
 
 def filter_sources(sources):
     """Filters sources into c, cpp and objc"""
@@ -138,7 +138,7 @@ extra_compile_cpp_args = {
     'win32': [],
 }
 
-extension = Extension("_hashranking",
+extension = Extension("hashranking.hashranking_cpp",
                              ['hashranking.cpp'],
                              define_macros = definitions[target_os],
                              include_dirs=["pybind11/include"],
@@ -156,7 +156,7 @@ setup(
     description='fast procedures for forking with hashes',
     long_description=long_description,
 
-    #url='https://github.com/podgorskiy/bimpy',
+    url='https://github.com/podgorskiy/hashranking',
 
     author='Stanislav Pidhorskyi',
     author_email='stanislav@podgorskiy.com',
