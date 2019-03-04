@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 import hashranking
 import numpy as np
 import unittest
-from hashranking import timer
+from tests import timer
 
 
 class HammingDistTests(unittest.TestCase):
@@ -67,13 +67,11 @@ class HammingDistTests(unittest.TestCase):
         rank = hashranking.hamming_rank(hashes_query, hashes_db)
         mAP_cpp, p, r = hashranking.compute_map_from_rank(rank, s, top_n)
 
-        print(mAP_py, mAP_cpp)
         self.assertEqual(mAP_py, mAP_cpp)
 
         mAP_py, p, r = hashranking.numpy_implementation.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
         mAP_cpp, p, r = hashranking.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
 
-        print(mAP_py, mAP_cpp)
         self.assertEqual(mAP_py, mAP_cpp)
 
     def test_on_random_64(self):
@@ -99,13 +97,11 @@ class HammingDistTests(unittest.TestCase):
         rank = hashranking.hamming_rank(hashes_query, hashes_db)
         mAP_cpp, p, r = hashranking.compute_map_from_rank(rank, s, top_n)
 
-        print(mAP_py, mAP_cpp)
         self.assertEqual(mAP_py, mAP_cpp)
 
         mAP_py, p, r = hashranking.numpy_implementation.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
         mAP_cpp, p, r = hashranking.compute_map_from_hashes(hashes_db, hashes_query, db, query, top_n)
 
-        print(mAP_py, mAP_cpp)
         self.assertEqual(mAP_py, mAP_cpp)
 
     def test_performance(self):
