@@ -31,6 +31,7 @@
 #endif
 
 #include <inttypes.h>
+#include <algorithm>
 
 namespace py = pybind11;
 
@@ -243,44 +244,42 @@ ndarray_uint32 argsort(ndarray_uint8 distance)
 
 inline double compute_average_precision(
 	const uint32_t* __restrict rank, 
-	const uint32_t* __restrict labels_db_ptr, 
-	const uint32_t labels_query,
+	const uint8_t* __restrict similarity, 
 	float* __restrict precision,
 	float* __restrict recall,
 	float* __restrict av_precision,
 	float* __restrict av_recall,
-	int* __restrict relevance, 
+	uint8_t* __restrict relevance, 
 	int* __restrict cumulative, 
 	ssize_t N, int top_n)
 {
 	for (int i =0; i < top_n; ++i)
 	{
-		int index = rank[i];
-		relevance[i] = labels_query == labels_db_ptr[index];
+		uint32_t index = rank[i];
+		relevance[i] = similarity[index];
 	}
-		
+	
 	cumulative[0] = relevance[0];
 	for (int i = 1; i < top_n; ++i)
 	{
 		cumulative[i] = relevance[i] + cumulative[i - 1];
 	}
     
-	int number_of_relative_docs = cumulative[top_n - 1];
+	int max_number_of_relevant_documents = cumulative[top_n - 1];
     
-	int total_number_of_relevant_documents = 0;
-    
-	for (int i =0; i < N; ++i)
+	for (int i = top_n; i < N; ++i)
 	{
-		int index = rank[i];
-		total_number_of_relevant_documents += labels_query == labels_db_ptr[index];
+		uint32_t index = rank[i];
+		max_number_of_relevant_documents += similarity[index];
 	}
+	max_number_of_relevant_documents = std::min(max_number_of_relevant_documents, top_n);
     
-	if (number_of_relative_docs != 0)
+	if (max_number_of_relevant_documents != 0)
 	{
 		for (int i = 0; i < top_n; ++i)
 		{
 			precision[i] = cumulative[i] / float(i+1);
-			recall[i] = cumulative[i] / float(total_number_of_relevant_documents);
+			recall[i] = cumulative[i] / float(max_number_of_relevant_documents);
 		}
     
 		for (int i = 0; i < top_n; ++i)
@@ -294,37 +293,30 @@ inline double compute_average_precision(
 		{
 			ap += precision[i] * relevance[i];
 		}
-		ap /= number_of_relative_docs;
+		ap /= max_number_of_relevant_documents;
 		return ap;
 	}
 	return 0.0;
 }
 
-std::tuple<double, ndarray_float, ndarray_float> compute_map_from_rank(ndarray_uint32 rank, ndarray_uint32 labels_db, ndarray_uint32 labels_query, int top_n)
+std::tuple<double, ndarray_float, ndarray_float> compute_map_from_rank(ndarray_uint32 rank, ndarray_uint8 similarity, int top_n)
 {
 	py::buffer_info r_info = rank.request();
-	py::buffer_info labels_db_info = labels_db.request();
-	py::buffer_info labels_query_info = labels_query.request();
+	py::buffer_info s_info = similarity.request();
 
 	py::gil_scoped_release release;
 
 	if (r_info.ndim != 2)
 		throw std::runtime_error("Number of dimensions for rank must be two");
 
-	if (labels_db_info.ndim != 1)
-		throw std::runtime_error("Number of dimensions from labels_db must be one");
+	if (s_info.ndim != 2)
+		throw std::runtime_error("Number of dimensions for similarity must be two");
 
-	if (labels_query_info.ndim != 1)
-		throw std::runtime_error("Number of dimensions from labels_db must be one");
+	if (s_info.shape != r_info.shape)
+		throw std::runtime_error("Shape of rank must match shape of labels_query");
 
-	if (r_info.shape[0] != labels_query_info.shape[0])
-		throw std::runtime_error("Size of dimension 0 of rank must match size of labels_query");
-
-	if (r_info.shape[1] != labels_db_info.shape[0])
-		throw std::runtime_error("Size of dimension 1 of rank must match size of labels_db");
-
-	if (top_n > labels_db_info.shape[0])
-		throw std::runtime_error("top_n must not be greater than size of labels_db");
+	if (top_n > r_info.shape[1])
+		throw std::runtime_error("top_n must not be greater than second dimension of rank");
 
 	ssize_t Q = r_info.shape[0];
 	ssize_t N = r_info.shape[1];
@@ -334,11 +326,10 @@ std::tuple<double, ndarray_float, ndarray_float> compute_map_from_rank(ndarray_u
 		top_n = (int)N;
 	}
 
-	const uint32_t* labels_db_ptr = labels_db.unchecked<1>().data(0);
-	const uint32_t* labels_query_ptr = labels_query.unchecked<1>().data(0);
+	auto s = similarity.unchecked<2>();
 	auto r = rank.unchecked<2>();
-		
-	int* relevance = (int*)(malloc(sizeof(int) * top_n));
+
+	uint8_t* relevance = (uint8_t*)(malloc(sizeof(uint8_t) * top_n));
 	int* cumulative = (int*)(malloc(sizeof(int) * top_n));
 	float* precision = (float*)(malloc(sizeof(float) * top_n));
 	float* recall = (float*)(malloc(sizeof(float) * top_n));
@@ -354,7 +345,9 @@ std::tuple<double, ndarray_float, ndarray_float> compute_map_from_rank(ndarray_u
 	for (int q = 0; q < Q; ++q)
 	{
 		const uint32_t* rank_ptr = r.data(q, 0);
-		double ap = compute_average_precision(rank_ptr, labels_db_ptr, labels_query_ptr[q], precision, recall, av_precision, av_recall, relevance, cumulative, N, top_n);
+		const uint8_t* similarity_ptr = s.data(q, 0);
+
+		double ap = compute_average_precision(rank_ptr, similarity_ptr, precision, recall, av_precision, av_recall, relevance, cumulative, N, top_n);
 		map += ap;
 	}
 	
@@ -400,7 +393,8 @@ std::tuple<double, ndarray_float, ndarray_float> _compute_map_from_hashes(ndarra
 	const uint32_t* labels_db_ptr = labels_db.unchecked<1>().data(0);
 	const uint32_t* labels_query_ptr = labels_query.unchecked<1>().data(0);
 
-	int* relevance = (int*)(malloc(sizeof(int) * top_n));
+	uint8_t* similarity = (uint8_t*)(malloc(sizeof(uint8_t) * N));
+	uint8_t* relevance = (uint8_t*)(malloc(sizeof(uint8_t) * top_n));
 	int* cumulative = (int*)(malloc(sizeof(int) * top_n));
 	float* precision = (float*)(malloc(sizeof(float) * top_n));
 	float* recall = (float*)(malloc(sizeof(float) * top_n));
@@ -423,7 +417,12 @@ std::tuple<double, ndarray_float, ndarray_float> _compute_map_from_hashes(ndarra
 
 		argsort_1d(rank, dist, hashes_db_info.shape[0]);
 
-		double ap = compute_average_precision(rank, labels_db_ptr, labels_query_ptr[q], precision, recall, av_precision, av_recall, relevance, cumulative, N, top_n);
+		for (int i = 0; i < N; ++i)
+		{
+		    similarity[i] = labels_query_ptr[q] == labels_db_ptr[i];
+		}
+
+		double ap = compute_average_precision(rank, similarity, precision, recall, av_precision, av_recall, relevance, cumulative, N, top_n);
 		map += ap;
 	}
 
@@ -441,6 +440,7 @@ std::tuple<double, ndarray_float, ndarray_float> _compute_map_from_hashes(ndarra
 	free(cumulative);
 	free(hashes_db_int);
 	free(hashes_query_int);
+	free(similarity);
 
 	py::gil_scoped_acquire acquire;
 	return std::tuple<double, ndarray_float, ndarray_float>(map,
@@ -486,6 +486,7 @@ std::tuple<double, ndarray_float, ndarray_float> compute_map_from_hashes(ndarray
 		return _compute_map_from_hashes<uint64_t>(hashes_db, hashes_query, labels_db, labels_query, top_n);
 	}
 }
+
 
 PYBIND11_MODULE(hashranking_cpp, m) {
 	m.doc() = "C++ Python extension that implements fast procedures for working with hashes";

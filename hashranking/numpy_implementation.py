@@ -61,17 +61,16 @@ def compute_map_from_rank(rank, s, top_n):
     av_precision = np.zeros(top_n)
     av_recall = np.zeros(top_n)
     for q in range(Q):
-        total_number_of_relevant_documents = np.sum(s[q])
         relevance = s[q, rank[q, :top_n]]
         cumulative = np.cumsum(relevance)
-        number_of_relative_docs = cumulative[-1]
-        if number_of_relative_docs != 0:
+        max_number_of_relevant_documents = min(np.sum(s[q]), top_n)
+        if max_number_of_relevant_documents != 0:
             precision = cumulative.astype(np.float32) / pos
-            recall = cumulative / total_number_of_relevant_documents
+            recall = cumulative / max_number_of_relevant_documents
             av_precision += precision
             av_recall += recall
             ap = np.dot(precision.astype(np.float64), relevance)
-            ap /= number_of_relative_docs
+            ap /= max_number_of_relevant_documents
             mAP += ap
     mAP /= Q
     av_precision /= Q
