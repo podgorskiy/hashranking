@@ -1,5 +1,5 @@
-hashranking - fast procedures for working with hashes for deeplearning research
-===============================================================================
+hashranking - fast procedures for working with hashes for similarity retrival research 
+======================================================================================
 
 In Deep Learning research, hashing, retrieval, and ranking tasks often require calculation of mAP of retrieval, which can be computationally expensive.
 Often, hashes are represented as ndarrays of floats, where the sign of the float number has the meaning of a bit. This happens because neural networks work with floats and that is precisely the output that they give. Computing ranking of documents in the DB based the query typically implemented in NumPy, which can be quite suboptimal.
