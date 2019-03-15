@@ -490,7 +490,7 @@ std::tuple<double, ndarray_float, ndarray_float> compute_map_from_hashes(ndarray
 
 PYBIND11_MODULE(hashranking_cpp, m) {
 	m.doc() = "C++ Python extension that implements fast procedures for working with hashes";
-	m.def("hamming_distance", &hamming_distance, R"(
+	m.def("hamming_distance", static_cast<ndarray_uint8(*)(ndarray_float, ndarray_float)>(&hamming_distance), R"(
 		Long doc string goes here
 	)");
 	m.def("argsort", &argsort, "Argsort of distance matrix along second dimention");
